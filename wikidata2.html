@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Wikipedia Data Viewer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f4f4f4;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+
+    textarea, select {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 15px;
+      font-size: 16px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      margin-bottom: 15px;
+    }
+
+    button:hover {
+      background-color: #2980b9;
+    }
+
+    .progress {
+      width: 100%;
+      background-color: #ddd;
+      height: 25px;
+      border-radius: 5px;
+      overflow: hidden;
+      margin-bottom: 15px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background-color: #27ae60;
+      text-align: center;
+      color: white;
+      line-height: 25px;
+      transition: width 0.3s;
+    }
+
+    #resultsContainer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .card {
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      padding: 15px;
+      width: calc(33% - 20px);
+      box-sizing: border-box;
+    }
+
+    .card img {
+      width: 100%;
+      border-radius: 5px;
+      margin-bottom: 10px;
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .card p {
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+
+    .card a {
+      display: inline-block;
+      margin-top: 10px;
+      color: #3498db;
+      text-decoration: none;
+    }
+
+    @media screen and (max-width: 800px) {
+      .card {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Afficher les données Wikipedia</h1>
+
+  <label for="language">Langue :</label>
+  <select id="language">
+    <option value="fr">Français</option>
+    <option value="en">Anglais</option>
+    <option value="es">Espagnol</option>
+    <option value="de">Allemand</option>
+  </select>
+
+  <label for="inputPages">Titres d'articles (un par ligne) :</label>
+  <textarea id="inputPages" rows="8" placeholder="Albert Einstein&#10;Tour Eiffel&#10;JavaScript"></textarea>
+
+  <div class="progress">
+    <div class="progress-bar" id="progressBar">0%</div>
+  </div>
+
+  <button onclick="fetchAndDisplay()">Afficher les données</button>
+  <button onclick="downloadDisplayedData()">Télécharger le JSON</button>
+
+  <div id="resultsContainer"></div>
+
+  <script>
+    let fetchedData = [];
+
+    async function fetchPageSummary(title, lang = 'fr') {
+      const url = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          console.warn(`Erreur pour ${title} : ${response.statusText}`);
+          return { title, error: response.statusText };
+        }
+        const data = await response.json();
+        return {
+          title: data.title,
+          description: data.description || '',
+          extract: data.extract || '',
+          url: data.content_urls?.desktop?.page || '',
+          image: data.thumbnail?.source || null
+        };
+      } catch (error) {
+        console.error(`Erreur réseau pour ${title}`, error);
+        return { title, error: error.message };
+      }
+    }
+
+    async function fetchAndDisplay() {
+      const input = document.getElementById('inputPages').value;
+      const lang = document.getElementById('language').value;
+      const progressBar = document.getElementById('progressBar');
+      const resultsContainer = document.getElementById('resultsContainer');
+
+      const titles = input.split('\n').map(t => t.trim()).filter(Boolean);
+
+      if (titles.length === 0) {
+        alert("Ajoute au moins un titre d'article !");
+        return;
+      }
+
+      fetchedData = [];
+      resultsContainer.innerHTML = '';
+      progressBar.style.width = '0%';
+      progressBar.textContent = '0%';
+
+      const total = titles.length;
+      let completed = 0;
+
+      const updateProgress = () => {
+        completed++;
+        const percent = Math.round((completed / total) * 100);
+        progressBar.style.width = percent + '%';
+        progressBar.textContent = percent + '%';
+      };
+
+      const promises = titles.map(title =>
+        fetchPageSummary(title, lang).then(result => {
+          fetchedData.push(result);
+          displayResult(result);
+          updateProgress();
+        })
+      );
+
+      await Promise.all(promises);
+    }
+
+    function displayResult(data) {
+      const resultsContainer = document.getElementById('resultsContainer');
+
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const title = document.createElement('h3');
+      title.textContent = data.title;
+
+      const description = document.createElement('p');
+      description.textContent = data.description;
+
+      const extract = document.createElement('p');
+      extract.textContent = data.extract;
+
+      const link = document.createElement('a');
+      link.href = data.url;
+      link.target = '_blank';
+      link.textContent = 'Voir sur Wikipedia';
+
+      card.appendChild(title);
+
+      if (data.image) {
+        const img = document.createElement('img');
+        img.src = data.image;
+        img.alt = data.title;
+        card.appendChild(img);
+      }
+
+      if (data.description) {
+        card.appendChild(description);
+      }
+
+      if (data.extract) {
+        card.appendChild(extract);
+      }
+
+      card.appendChild(link);
+
+      resultsContainer.appendChild(card);
+    }
+
+    function downloadDisplayedData() {
+      if (!fetchedData.length) {
+        alert("Aucune donnée à télécharger !");
+        return;
+      }
+
+      const jsonStr = JSON.stringify(fetchedData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'wikipedia_data.json';
+      document.body.appendChild(a);
+      a.click();
+
+      // Nettoyage
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  </script>
+
+</body>
+</html>
